@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Trạm giám sát khí gas và nhiệt độ</title>
+<style>
+:root{--bg:#f3f5f4;--card:#fff;--ink:#16211d;--mute:#5d6b65;--line:#d5dcd8;--ok:#1f7a4d;--warn:#b86e00;--bad:#c4262e;--gas:#2f6fb5;--tmp:#c4562e;--btn:#16211d;--btnink:#fff}
+@media(prefers-color-scheme:dark){:root{--bg:#101614;--card:#18201d;--ink:#e8efeb;--mute:#93a39b;--line:#2c3833;--ok:#4cc38a;--warn:#f0a63a;--bad:#ff6b6b;--gas:#6aa9f0;--tmp:#f08a5d;--btn:#e8efeb;--btnink:#101614}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 "Segoe UI",system-ui,sans-serif;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+header,main{max-width:980px;margin:0 auto;padding:0 16px}
+header{padding-top:20px}
+h1{font-size:1.5rem;margin:0}
+.sub{color:var(--mute);margin:2px 0 14px}
+nav{display:flex;gap:4px;overflow-x:auto;border-bottom:1px solid var(--line)}
+nav button{background:none;border:0;border-bottom:3px solid transparent;color:var(--mute);padding:10px 14px;font:inherit;cursor:pointer;white-space:nowrap}
+nav button[aria-selected=true]{color:var(--ink);border-color:var(--ink);font-weight:600}
+button:focus-visible,input:focus-visible{outline:3px solid var(--gas);outline-offset:2px}
+.btn{background:var(--btn);color:var(--btnink);border:0;border-radius:6px;padding:9px 16px;font:inherit;cursor:pointer}
+.btn.ghost{background:none;color:var(--ink);border:1px solid var(--line)}
+.btn:disabled{opacity:.55;cursor:wait}
+section{margin:18px 0}
+h2{font-size:1.1rem;margin:0 0 8px}
+.status{border-left:8px solid var(--ok);background:var(--card);padding:14px 18px;border-radius:6px;display:flex;flex-wrap:wrap;gap:8px 24px;align-items:center}
+.status.l1{border-color:var(--warn)}.status.l2{border-color:var(--bad)}
+.status b{font-size:1.6rem}
+.mode{color:var(--mute);font-size:.9rem}
+.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+.box{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:12px 14px}
+.box small{color:var(--mute)}
+.num{font-size:2rem;font-weight:600;line-height:1.2}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{border:1px solid var(--line);background:var(--card);border-radius:20px;padding:5px 14px}
+.chip.on{background:var(--bad);border-color:var(--bad);color:#fff}
+canvas{width:100%;height:220px;background:var(--card);border:1px solid var(--line);border-radius:6px;display:block}
+.legend{display:flex;gap:16px;color:var(--mute);font-size:.9rem;margin-top:6px}
+.legend i{display:inline-block;width:14px;height:3px;vertical-align:middle;margin-right:6px}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line)}
+th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line)}
+label{display:block;margin-bottom:10px}
+input[type=number]{width:140px;padding:7px;font:inherit;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:6px;margin-left:8px}
+#aitxt{white-space:pre-wrap;margin:10px 0 0}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+code,pre{background:var(--card);border:1px solid var(--line);border-radius:4px;padding:2px 6px}
+pre{padding:10px;overflow-x:auto}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<header>
+  <h1>Trạm giám sát khí gas và nhiệt độ</h1>
+  <p class="sub">Arduino Uno R3, MQ-2, LM35, PIR</p>
+  <nav>
+    <button data-tab="live" aria-selected="true">Giám sát</button>
+    <button data-tab="hist" aria-selected="false">Lịch sử cảnh báo</button>
+    <button data-tab="demo" aria-selected="false">Demo thuyết trình</button>
+    <button data-tab="set" aria-selected="false">Cài đặt ngưỡng</button>
+    <button data-tab="dev" aria-selected="false">Thiết bị</button>
+  </nav>
+</header>
+<main>
+
+<div data-p="live">
+  <section>
+    <div class="status" id="st" role="status" aria-live="polite">
+      <b id="stt">Bình thường</b><span class="mode" id="mode">Đang chạy mô phỏng</span>
+    </div>
+  </section>
+  <section class="grid">
+    <div class="box"><small>Khí gas (MQ-2)</small><div class="num" id="vg">0 ppm</div><small id="tg"></small></div>
+    <div class="box"><small>Nhiệt độ (LM35)</small><div class="num" id="vt">0 °C</div><small id="tt"></small></div>
+    <div class="box"><small>Chuyển động (PIR)</small><div class="num" id="vp">Không</div></div>
+  </section>
+  <section>
+    <h2>Bốn trường hợp</h2>
+    <p class="sub">Bấm một trường hợp để mô phỏng.</p>
+    <div class="row" id="cases"></div>
+  </section>
+  <section>
+    <h2>Thiết bị chấp hành</h2>
+    <div class="row">
+      <div class="chips" id="act"></div>
+      <button class="btn ghost" id="beep" type="button">Thử còi</button>
+    </div>
+  </section>
+  <section>
+    <h2>Diễn biến 60 giây gần nhất</h2>
+    <p class="sub">Mỗi đường được chia cho ngưỡng của nó. Chạm vạch đứt là chạm ngưỡng.</p>
+    <canvas id="cv" width="900" height="220" role="img" aria-label="Biểu đồ khí gas và nhiệt độ theo ngưỡng"></canvas>
+    <div class="legend"><span><i style="background:var(--gas)"></i>Khí gas</span><span><i style="background:var(--tmp)"></i>Nhiệt độ</span></div>
+  </section>
+  <section class="box" id="aibox">
+    <h2>Nhận định của AI</h2>
+    <div class="row">
+      <button class="btn" id="aibtn" type="button">Phân tích tình huống</button>
+      <label style="margin:0"><input type="checkbox" id="aiauto"> Tự động khi có cảnh báo</label>
+    </div>
+    <p id="aitxt">Chưa có phân tích. AI chỉ tư vấn, còi và quạt vẫn do ngưỡng điều khiển.</p>
+  </section>
+</div>
+
+<div data-p="hist" hidden>
+  <section>
+    <div class="row"><h2 style="margin:0">Lịch sử cảnh báo</h2><button class="btn ghost" id="clr" type="button">Xóa lịch sử</button></div>
+    <table><thead><tr><th>Thời gian</th><th>Mức</th><th>Gas</th><th>Nhiệt độ</th></tr></thead><tbody id="hb"></tbody></table>
+    <p id="he" class="sub">Chưa có cảnh báo nào.</p>
+  </section>
+</div>
+
+<div data-p="demo" hidden>
+  <section>
+    <h2>Demo thuyết trình</h2>
+    <p class="sub">Chạy lần lượt bốn trường hợp, mỗi trường hợp 6 giây.</p>
+    <div class="row">
+      <button class="btn" id="auto" type="button">Tự động phát</button>
+      <button class="btn ghost" id="nx" type="button">Trường hợp tiếp theo</button>
+      <button class="btn ghost" id="rs" type="button">Về ban đầu</button>
+    </div>
+    <p id="dn" class="sub"></p>
+  </section>
+</div>
+
+<div data-p="set" hidden>
+  <section>
+    <h2>Cài đặt ngưỡng</h2>
+    <div id="thf"></div>
+    <button class="btn ghost" id="thr" type="button">Về mặc định</button>
+  </section>
+</div>
+
+<div data-p="dev" hidden>
+  <section>
+    <h2>Kết nối Arduino</h2>
+    <p>Dùng Chrome hoặc Edge, cắm Arduino qua USB rồi bấm kết nối.</p>
+    <button class="btn" id="conn" type="button">Kết nối cổng Serial</button>
+    <p id="cm" class="sub" role="status"></p>
+    <p>Arduino gửi mỗi dòng một chuỗi JSON, tốc độ 9600 baud:</p>
+    <pre>{"gas":320,"temp":31.5,"pir":0}</pre>
+  </section>
+  <section>
+    <h2>Địa chỉ AI</h2>
+    <label>Worker URL <input type="text" id="aiurl" style="width:100%;max-width:520px;padding:7px;font:inherit;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:6px"></label>
+    <p class="sub">Địa chỉ Cloudflare Worker của bạn, được lưu trong trình duyệt này.</p>
+  </section>
+</div>
+
+</main>
+<script>
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+const store={get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch{return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}}};
+
+const K=['gas','temp'];
+const S={gas:{n:'Khí gas',u:'ppm',d:300},temp:{n:'Nhiệt độ',u:'°C',d:50}};
+const CASES=[
+ {n:'Bình thường',gas:120,temp:30,pir:0,d:'Không khí sạch, nhiệt độ ổn định.'},
+ {n:'Rò rỉ gas',gas:520,temp:31,pir:1,d:'Nồng độ gas vượt ngưỡng, có người trong khu vực.'},
+ {n:'Nhiệt độ cao',gas:140,temp:68,pir:0,d:'Nhiệt độ tăng nhanh, chưa có gas.'},
+ {n:'Nguy cơ cháy',gas:640,temp:78,pir:1,d:'Gas và nhiệt độ cùng vượt ngưỡng.'}
+];
+const LV=['Bình thường','Cảnh báo','Nguy hiểm'];
+const DEF_URL='https://gas-ai-proxy.nhandhfqn30160.workers.dev';
+
+let th=store.get('th4',{gas:S.gas.d,temp:S.temp.d});
+let hist=store.get('hist4',[]);
+let val={gas:120,temp:30},pir=0,target=CASES[0],live=false,level=0,lastLevel=0;
+let series={gas:[],temp:[]};
+let aiUrl=store.get('aiurl',DEF_URL),aiBusy=false,aiLast=0;
+
+/* ---- tính mức ---- */
+function calcLevel(){
+  const g=val.gas/th.gas,t=val.temp/th.temp;
+  if((g>=1&&t>=1)||g>=1.5||t>=1.3)return 2;
+  if(g>=1||t>=1)return 1;
+  return 0;
+}
+
+/* ---- cập nhật giao diện ---- */
+function zones(){
+  $('#tg').textContent='Ngưỡng '+th.gas+' ppm';
+  $('#tt').textContent='Ngưỡng '+th.temp+' °C';
+}
+function renderAct(){
+  const gasHigh=val.gas>=th.gas;
+  const list=[['Đèn cảnh báo',level>=1],['Còi',level>=2],['Quạt hút',gasHigh]];
+  $('#act').innerHTML=list.map(([n,on])=>`<span class="chip${on?' on':''}">${n}: ${on?'Bật':'Tắt'}</span>`).join('');
+}
+function tick(){
+  level=calcLevel();
+  $('#vg').textContent=Math.round(val.gas)+' ppm';
+  $('#vt').textContent=val.temp.toFixed(1)+' °C';
+  $('#vp').textContent=pir?'Có người':'Không';
+  $('#st').className='status'+(level?' l'+level:'');
+  $('#stt').textContent=LV[level];
+  series.gas.push(val.gas/th.gas);series.temp.push(val.temp/th.temp);
+  if(series.gas.length>60){series.gas.shift();series.temp.shift()}
+  if(level>lastLevel||(level===0&&lastLevel>0&&false)){logHist()}
+  lastLevel=level;
+  renderAct();draw();
+}
+function logHist(){
+  hist.unshift({t:new Date().toLocaleString('vi-VN'),l:level,g:Math.round(val.gas),c:+val.temp.toFixed(1)});
+  hist=hist.slice(0,50);store.set('hist4',hist);drawHist();
+}
+function drawHist(){
+  $('#hb').innerHTML=hist.map(h=>`<tr><td>${h.t}</td><td>${LV[h.l]}</td><td>${h.g} ppm</td><td>${h.c} °C</td></tr>`).join('');
+  $('#he').hidden=hist.length>0;
+}
+
+/* ---- biểu đồ ---- */
+function draw(){
+  const cv=$('#cv');if(!cv||cv.offsetParent===null)return;
+  const w=cv.clientWidth,h=cv.clientHeight,dpr=window.devicePixelRatio||1;
+  if(cv.width!==w*dpr){cv.width=w*dpr;cv.height=h*dpr}
+  const c=cv.getContext('2d');c.setTransform(dpr,0,0,dpr,0,0);c.clearRect(0,0,w,h);
+  const cs=getComputedStyle(document.body),max=2,pad=10;
+  const Y=r=>h-pad-Math.min(r,max)/max*(h-2*pad);
+  c.strokeStyle=cs.getPropertyValue('--bad');c.setLineDash([6,5]);c.lineWidth=1.5;
+  c.beginPath();c.moveTo(0,Y(1));c.lineTo(w,Y(1));c.stroke();c.setLineDash([]);
+  [['gas','--gas'],['temp','--tmp']].forEach(([k,col])=>{
+    c.strokeStyle=cs.getPropertyValue(col);c.lineWidth=2.5;c.beginPath();
+    series[k].forEach((r,i)=>{const x=i/59*w;i?c.lineTo(x,Y(r)):c.moveTo(x,Y(r))});c.stroke();
+  });
+}
+addEventListener('resize',draw);
+
+/* ---- mô phỏng ---- */
+function setCase(i){
+  target=CASES[i];pir=target.pir;
+  $('#dn').textContent=(i+1)+'/4. '+target.n+': '+target.d;
+  document.querySelectorAll('#cases button').forEach((b,j)=>b.setAttribute('aria-pressed',j==i));
+}
+$('#cases').innerHTML=CASES.map((c,i)=>`<button class="btn ghost" type="button" data-i="${i}" aria-pressed="false">${c.n}</button>`).join('');
+$$('#cases button').forEach(b=>b.onclick=()=>{stopAuto();si=+b.dataset.i;setCase(si)});
+setInterval(()=>{
+  if(live)return;
+  K.forEach(k=>{val[k]+=(target[k]-val[k])*.3+(Math.random()-.5)*(k=='gas'?14:.6)});
+  tick();
+},1000);
+
+/* ---- còi thử ---- */
+$('#beep').onclick=()=>{
+  try{
+    const a=new (window.AudioContext||window.webkitAudioContext)(),o=a.createOscillator(),g=a.createGain();
+    o.type='square';o.frequency.value=880;g.gain.value=.08;o.connect(g);g.connect(a.destination);
+    o.start();o.stop(a.currentTime+.6);
+  }catch{}
+};
+
+/* ---- lịch sử ---- */
+$('#clr').onclick=()=>{hist=[];store.set('hist4',hist);drawHist()};
+
+/* ---- demo thuyết trình ---- */
+let si=-1,at=0;
+const stopAuto=()=>{clearInterval(at);at=0;$('#auto').textContent='Tự động phát'};
+$('#nx').onclick=()=>{si=(si+1)%4;setCase(si)};
+$('#rs').onclick=()=>{stopAuto();si=0;setCase(0)};
+$('#auto').onclick=()=>{if(at){stopAuto();return}$('#auto').textContent='Dừng phát';si=(si+1)%4;setCase(si);at=setInterval(()=>{si=(si+1)%4;setCase(si)},6000)};
+
+/* ---- ngưỡng ---- */
+function buildTh(){
+  $('#thf').innerHTML=K.map(k=>`<label><span>${S[k].n} cao từ (${S[k].u})</span><input type="number" data-k="${k}" value="${th[k]}"></label>`).join('');
+  $$('#thf input').forEach(i=>i.onchange=()=>{const v=+i.value;if(!(v>0))return;th[i.dataset.k]=v;store.set('th4',th);zones()});
+}
+$('#thr').onclick=()=>{th={gas:S.gas.d,temp:S.temp.d};store.set('th4',th);buildTh();zones()};
+
+/* ---- cổng serial ---- */
+function feed(t){try{const j=JSON.parse(t);K.forEach(k=>{if(typeof j[k]=='number')val[k]=j[k]});if('pir'in j)pir=+j.pir?1:0;tick()}catch{}}
+$('#conn').onclick=async()=>{
+  if(!navigator.serial){$('#cm').textContent='Trình duyệt này không hỗ trợ Web Serial. Hãy mở bằng Chrome hoặc Edge.';return}
+  try{
+    const p=await navigator.serial.requestPort();await p.open({baudRate:9600});live=true;stopAuto();
+    $('#mode').textContent='Đang nhận dữ liệu từ Arduino';$('#cm').textContent='Đã kết nối. Đang đọc dữ liệu.';
+    const dec=new TextDecoderStream();p.readable.pipeTo(dec.writable);const r=dec.readable.getReader();let buf='';
+    for(;;){const {value,done}=await r.read();if(done)break;buf+=value;let i;while((i=buf.indexOf('\n'))>=0){feed(buf.slice(0,i));buf=buf.slice(i+1)}}
+  }catch(e){$('#cm').textContent='Không mở được cổng: '+e.message}
+  live=false;$('#mode').textContent='Đang chạy mô phỏng';
+};
+
+/* ---- AI phân tích ---- */
+$('#aiurl').value=aiUrl;
+$('#aiurl').onchange=e=>{aiUrl=e.target.value.trim()||DEF_URL;store.set('aiurl',aiUrl)};
+function snapshot(){
+  const d={muc_hien_tai:LV[level]};
+  K.forEach(k=>{d[k]={ten:S[k].n,gia_tri:+val[k].toFixed(1),don_vi:S[k].u,nguong:th[k],vuot_nguong:val[k]>=th[k]}});
+  d.pir_phat_hien_nguoi=!!pir;
+  d.nguon_du_lieu=live?'Arduino thật':'mô phỏng';
+  return d;
+}
+async function hoiAI(){
+  if(aiBusy)return;
+  aiBusy=true;aiLast=Date.now();
+  const out=$('#aitxt'),btn=$('#aibtn');
+  btn.disabled=true;out.textContent='AI đang phân tích...';
+  try{
+    const r=await fetch(aiUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:snapshot()})});
+    if(!r.ok)throw new Error('mã lỗi '+r.status);
+    const j=await r.json();
+    out.textContent=j.text||'AI không trả về nội dung.';
+  }catch(e){out.textContent='Không gọi được AI: '+e.message+'. Kiểm tra địa chỉ Worker ở tab Thiết bị.'}
+  btn.disabled=false;aiBusy=false;
+}
+$('#aibtn').onclick=hoiAI;
+setInterval(()=>{
+  if(!$('#aiauto').checked||aiBusy||level===0)return;
+  if(Date.now()-aiLast<30000)return;
+  hoiAI();
+},2000);
+
+/* ---- chuyển trang ---- */
+$$('nav [data-tab]').forEach(b=>b.onclick=()=>{
+  $$('nav [data-tab]').forEach(x=>x.setAttribute('aria-selected',x==b));
+  $$('[data-p]').forEach(p=>p.hidden=p.dataset.p!=b.dataset.tab);
+  if(b.dataset.tab=='live')draw();
+});
+setCase(0);si=0;buildTh();zones();drawHist();tick();
+</script>
+</body>
+</html>
